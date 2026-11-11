@@ -1,0 +1,3 @@
+*.hprof
+td*.txt
+.DS_Store

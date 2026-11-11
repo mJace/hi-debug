@@ -1,0 +1,201 @@
+# 所有 lab 都用同一個 hardened image，從 ConfigMap lab-app-src 掛載 App.java 用 source-launch 執行。
+# 每個 Pod 都用 openshift.io/required-scc 指定 restricted-v2 SCC（隨機 UID、不能加 capability），
+# 跟正式環境一般應用的權限一樣。明確指定是為了避免 Pod 拿到 anyuid 等權限較大的 SCC
+# （例如叢集把 anyuid 開給了較廣的群組時）。
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab1-config
+data:
+  app.properties: |
+    greeting=hello from lab1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab1
+  labels: {app: lab1}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: lab1}}
+  template:
+    metadata:
+      labels: {app: lab1}
+      annotations: {openshift.io/required-scc: restricted-v2}
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/hi/openjdk:latest
+        command: ["java", "/app/App.java"]
+        env:
+        - {name: LAB, value: "1"}
+        - {name: APP_CONFIG, value: /etc/app/app.properties}
+        volumeMounts:
+        - {name: src, mountPath: /app}
+        - {name: config, mountPath: /config}
+      volumes:
+      - name: src
+        configMap: {name: lab-app-src}
+      - name: config
+        configMap: {name: lab1-config}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab2
+  labels: {app: lab2}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: lab2}}
+  template:
+    metadata:
+      labels: {app: lab2}
+      annotations: {openshift.io/required-scc: restricted-v2}
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/hi/openjdk:latest
+        command: ["java", "/app/App.java"]
+        env:
+        - {name: LAB, value: "2"}
+        ports:
+        - {containerPort: 8080}
+        volumeMounts:
+        - {name: src, mountPath: /app}
+      volumes:
+      - name: src
+        configMap: {name: lab-app-src}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab2
+spec:
+  selector: {app: lab2}
+  ports:
+  - {port: 8080, targetPort: 8080}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab3
+  labels: {app: lab3}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: lab3}}
+  template:
+    metadata:
+      labels: {app: lab3}
+      annotations: {openshift.io/required-scc: restricted-v2}
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/hi/openjdk:latest
+        command: ["java", "/app/App.java"]
+        env:
+        - {name: LAB, value: "3"}
+        ports:
+        - {containerPort: 8080}
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8080}
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 2
+        volumeMounts:
+        - {name: src, mountPath: /app}
+      volumes:
+      - name: src
+        configMap: {name: lab-app-src}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab4
+  labels: {app: lab4}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: lab4}}
+  template:
+    metadata:
+      labels: {app: lab4}
+      annotations: {openshift.io/required-scc: restricted-v2}
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/hi/openjdk:latest
+        command: ["java", "/app/App.java"]
+        env:
+        - {name: LAB, value: "4"}
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:MaxDirectMemorySize=2g -XX:NativeMemoryTracking=summary"
+        resources:
+          requests: {memory: 384Mi}
+          limits: {memory: 384Mi}
+        volumeMounts:
+        - {name: src, mountPath: /app}
+      volumes:
+      - name: src
+        configMap: {name: lab-app-src}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels: {app: backend}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: backend}}
+  template:
+    metadata:
+      labels: {app: backend}
+      annotations: {openshift.io/required-scc: restricted-v2}
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/hi/openjdk:latest
+        command: ["java", "/app/App.java"]
+        env:
+        - {name: LAB, value: "5-backend"}
+        ports:
+        - {containerPort: 9090}
+        volumeMounts:
+        - {name: src, mountPath: /app}
+      volumes:
+      - name: src
+        configMap: {name: lab-app-src}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector: {app: backend}
+  ports:
+  - {port: 9091, targetPort: 9091}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab5
+  labels: {app: lab5}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: lab5}}
+  template:
+    metadata:
+      labels: {app: lab5}
+      annotations: {openshift.io/required-scc: restricted-v2}
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/hi/openjdk:latest
+        command: ["java", "/app/App.java"]
+        env:
+        - {name: LAB, value: "5-frontend"}
+        - {name: UPSTREAM_URL, value: "http://backend:9091/ping"}
+        volumeMounts:
+        - {name: src, mountPath: /app}
+      volumes:
+      - name: src
+        configMap: {name: lab-app-src}
